@@ -71,6 +71,10 @@ en `open_impl` / `openTarget` y en el arranque de `run`:
 - Linux no tiene una terminal por defecto (`x-terminal-emulator` es de Debian/Ubuntu): se
   prueba `$TERMINAL` y después una lista de las comunes.
 - En macOS `code` existe sólo si se lo instaló desde VS Code; si no, `open -a`.
+- El `AppRun` del AppImage apunta `PYTHONHOME`, `PYTHONPATH`, `LD_LIBRARY_PATH`, `GTK_*`...
+  adentro de sí mismo. La app las necesita, pero un hijo no: con ese `PYTHONHOME` el
+  `python3` del sistema ni arranca y `ldt` no respondía. Todo lo que se lanza pasa por
+  `host_env`, que les saca lo que cae en el AppImage. Un `Command` nuevo va por ahí.
 - macOS va con firma ad-hoc (`signingIdentity: "-"`): sin ninguna firma un binario no
   abre en Apple Silicon. No es una firma de desarrollador, así que Gatekeeper pide
   confirmar la primera vez.
