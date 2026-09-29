@@ -8,6 +8,8 @@ Es la cara humana de [`ldt`](https://github.com/lumel-dev/ldt): toda la detecci√
 manejo de procesos los hace `ldt`, y lo que la UI levanta es lo mismo que ven `ldt status`
 y los agentes de c√≥digo.
 
+![Lumel Devtools UI: la grilla de proyectos, con uno corriendo](docs/screenshot.png)
+
 ## Requisitos
 
 - [`ldt`](https://github.com/lumel-dev/ldt) instalado y en el PATH (o `LDT_PY` apuntando
