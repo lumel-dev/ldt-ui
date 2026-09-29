@@ -80,13 +80,17 @@ jobs:
       - run: pnpm tauri build ${{ matrix.args }}
 
       # Solo los instaladores: `bundle/` tambien tiene el AppDir del AppImage y el .app suelto.
+      # Quedan en `target/release/` o, con `--target`, en `target/<target>/release/`. Sin
+      # `**`: el bash de macOS es el 3.2 y no tiene `globstar`.
       - name: Juntar instaladores
         shell: bash
         run: |
-          shopt -s nullglob globstar
+          shopt -s nullglob
           mkdir -p installers
-          for f in src-tauri/target/**/release/bundle/*/{*.AppImage,*.deb,*.rpm,*.dmg,*.msi,*-setup.exe}; do
-            cp "$f" installers/
+          for dir in src-tauri/target/release/bundle src-tauri/target/*/release/bundle; do
+            for f in "$dir"/*/*.AppImage "$dir"/*/*.deb "$dir"/*/*.rpm "$dir"/*/*.dmg "$dir"/*/*.msi "$dir"/*/*-setup.exe; do
+              cp "$f" installers/
+            done
           done
           ls -la installers
           [ -n "$(ls installers)" ]
