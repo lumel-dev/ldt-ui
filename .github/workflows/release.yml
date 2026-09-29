@@ -15,7 +15,30 @@ permissions:
   contents: write
 
 jobs:
+  # El borrador se crea una sola vez, antes de compilar. Si cada build lo buscaba y lo creaba
+  # por su cuenta, corrian a la vez, ninguno lo encontraba y quedaban varios
+  # borradores con el mismo tag, cada uno con los instaladores de algun sistema.
+  release:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.draft.outputs.id }}
+    steps:
+      - id: draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=true --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: release
+    # Sin tag, `release` se saltea y el build corre igual.
+    if: ${{ !failure() && !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
@@ -60,9 +83,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_name }}
-          releaseDraft: true
+          releaseId: ${{ needs.release.outputs.id }}
           args: ${{ matrix.args }}
 
       # Sin tag (a mano, sobre una rama) no hay release: los instaladores quedan como
