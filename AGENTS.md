@@ -58,6 +58,31 @@ y la terminal por `cmd /c start cmd.exe` con la carpeta como `cwd`: nada que ten
 citarse para el parser de `cmd`, donde un `&` de una query string corta el comando. VS Code
 igual: `code` es un `.cmd`, así que va `cmd /c code .` con la carpeta como `cwd`.
 
+**Linux y macOS también, y con sus propios bordes.** Todo lo que depende del sistema está
+en `open_impl` / `openTarget` y en el arranque de `run`:
+
+- Una app GUI no hereda el PATH de la shell: en macOS, abierta desde el Finder o el Dock,
+  recibe el de launchd (`/usr/bin:/bin:/usr/sbin:/sbin`), y muchos lanzadores de Linux
+  tampoco leen el `.bashrc`. Sin eso no aparecen `ldt` ni el `node` / `pnpm` con que `ldt`
+  levanta los proyectos. `adopt_login_path` le pide el PATH a la shell de login
+  (`$SHELL -ilc`, con 3 s de tope por si un rc se cuelga) y suma `~/.local/bin`.
+- El `install.sh` de `ldt` deja un symlink en `~/.local/bin/ldt`: `ldt.py` se busca al
+  lado del archivo real, no del link.
+- Linux no tiene una terminal por defecto (`x-terminal-emulator` es de Debian/Ubuntu): se
+  prueba `$TERMINAL` y después una lista de las comunes.
+- En macOS `code` existe sólo si se lo instaló desde VS Code; si no, `open -a`.
+- macOS va con firma ad-hoc (`signingIdentity: "-"`): sin ninguna firma un binario no
+  abre en Apple Silicon. No es una firma de desarrollador, así que Gatekeeper pide
+  confirmar la primera vez.
+
+## Versiones
+
+`version` va igual en `tauri.conf.json`, `Cargo.toml` y `package.json`. Un tag `v<versión>`
+dispara `.github/workflows/release.yml`, que arma los instaladores de Windows, Linux
+(Ubuntu 22.04, por la glibc) y macOS (universal) en una release **borrador**: se revisa y
+se publica a mano. Si el workflow llega en el mismo push que el tag y no arranca,
+`gh workflow run release.yml --ref v<versión>` lo lanza igual.
+
 ## Desarrollo
 
 ```bash

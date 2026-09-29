@@ -1,7 +1,9 @@
 # Instaladores para Windows, Linux y macOS en una release de GitHub.
 #
 # Se dispara con un tag `v*` (el mismo numero que `version` en `tauri.conf.json`) y deja
-# la release como borrador: se revisa y se publica a mano.
+# la release como borrador: se revisa y se publica a mano. Lanzado a mano sobre una rama
+# (`gh workflow run release.yml --ref <rama>`) solo compila y deja los instaladores como
+# artifacts.
 name: release
 
 on:
@@ -62,3 +64,14 @@ jobs:
           releaseName: ${{ github.ref_name }}
           releaseDraft: true
           args: ${{ matrix.args }}
+
+      # Sin tag (a mano, sobre una rama) no hay release: los instaladores quedan como
+      # artifacts del run, para probarlos antes de publicar.
+      - if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/*/*.*
+            src-tauri/target/*/release/bundle/*/*.*
+          retention-days: 7

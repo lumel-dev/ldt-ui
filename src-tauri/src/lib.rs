@@ -48,6 +48,38 @@ fn hidden(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// El entorno de la maquina para lo que lanza la app, sin lo que le agrego el AppImage.
+///
+/// El `AppRun` de un AppImage apunta `PYTHONHOME`, `PYTHONPATH`, `LD_LIBRARY_PATH`, `PATH`,
+/// `XDG_DATA_DIRS`, `GTK_*`, `GIO_*`... adentro de si mismo. La app las necesita (los
+/// procesos de WebKit las heredan), pero un hijo no: el `python3` del sistema con ese
+/// `PYTHONHOME` ni arranca, y `ldt` nunca respondia. Se sacan solo en los comandos que se
+/// lanzan: de una lista se quitan los tramos que caen en el AppImage, y si no queda nada la
+/// variable no se pasa. Fuera de un AppImage no hace nada.
+fn host_env(cmd: &mut Command) -> &mut Command {
+    let Some(appdir) = std::env::var_os("APPDIR").filter(|d| !d.is_empty()) else {
+        return cmd;
+    };
+    let appdir = PathBuf::from(appdir);
+    let inside = |p: &Path| p.starts_with(&appdir);
+    for (key, value) in std::env::vars_os() {
+        if matches!(key.to_str(), Some("APPDIR" | "APPIMAGE" | "ARGV0" | "OWD" | "PYTHONDONTWRITEBYTECODE")) {
+            cmd.env_remove(&key);
+            continue;
+        }
+        let parts: Vec<PathBuf> = std::env::split_paths(&value).collect();
+        if !parts.iter().any(|p| inside(p)) {
+            continue;
+        }
+        let kept: Vec<PathBuf> = parts.into_iter().filter(|p| !inside(p) && !p.as_os_str().is_empty()).collect();
+        match std::env::join_paths(&kept) {
+            Ok(joined) if !kept.is_empty() => cmd.env(&key, joined),
+            _ => cmd.env_remove(&key),
+        };
+    }
+    cmd
+}
+
 /// En macOS una app abierta desde el Finder o el Dock hereda el PATH de launchd
 /// (`/usr/bin:/bin:/usr/sbin:/sbin`), no el de la shell, y en Linux muchos lanzadores
 /// tampoco leen el `.bashrc` / `.zshrc`. Sin el PATH de la persona no aparecen ni `ldt`
@@ -59,7 +91,7 @@ fn adopt_login_path() {
 
     const MARK: &str = "__LDT_UI_PATH__";
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-    let child = Command::new(&shell)
+    let child = host_env(&mut Command::new(&shell))
         .args(["-ilc", &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -134,7 +166,7 @@ fn run_ldt(args: Vec<String>) -> Envelope {
         Err(e) => return Envelope::err(e),
     };
     let output = hidden(
-        Command::new(python())
+        host_env(&mut Command::new(python()))
             .arg(&script)
             .args(&args)
             .arg("--json")
@@ -247,7 +279,7 @@ fn spawn(cmd: &mut Command) -> Result<(), String> {
 }
 
 fn try_spawn(cmd: &mut Command) -> std::io::Result<()> {
-    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    host_env(cmd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     cmd.spawn().map(|_| ())
 }
 

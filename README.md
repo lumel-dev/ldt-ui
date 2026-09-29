@@ -12,19 +12,75 @@ y los agentes de código.
 
 ## Instalación
 
-Bajá el instalador de la [última release](https://github.com/lumel-dev/ldt-ui/releases/latest)
-y listo: la app ya viene compilada, no hace falta Node ni Rust.
+Los instaladores están en la [última release](https://github.com/lumel-dev/ldt-ui/releases/latest).
+La app ya viene compilada: para usarla no hace falta Node ni Rust.
+
+En los tres sistemas necesita [`ldt`](https://github.com/lumel-dev/ldt) instalado, con su
+instalador (`install.ps1` en Windows, `install.sh` en Linux y macOS), porque la app no
+hace nada por su cuenta: todo se lo pide a `ldt`. Eso a su vez pide Python 3.10+; el
+README de `ldt` tiene el detalle. Los proyectos que levantes necesitan lo suyo (Node,
+Python, Go…), igual que si los levantaras a mano.
+
+Los instaladores no están firmados con un certificado de desarrollador, así que la
+primera vez el sistema pide confirmar. Abajo está cómo, en cada caso.
+
+### Windows
+
+**Requisitos:** Windows 10 u 11 de 64 bits. WebView2 ya viene con el sistema.
 
 - `ldt-ui_<versión>_x64-setup.exe`: instala para tu usuario, sin permisos de administrador.
-- `ldt-ui_<versión>_x64_en-US.msi`: lo mismo en formato MSI.
+- `ldt-ui_<versión>_x64_en-US.msi`: lo mismo en formato MSI, para instalar en la máquina.
 
-Lo único que necesita es [`ldt`](https://github.com/lumel-dev/ldt) instalado y en el PATH,
-porque la app no hace nada por su cuenta: todo lo pide a `ldt`. WebView2 ya viene con
-Windows 10/11. Los instaladores no están firmados, así que la primera vez SmartScreen
-puede avisar ("Más información" → "Ejecutar de todas formas").
+Si SmartScreen avisa: "Más información" → "Ejecutar de todas formas".
 
-Por ahora hay instaladores sólo para Windows x64. En Linux o macOS se compila desde el
-código (abajo).
+### macOS
+
+**Requisitos:** macOS 10.13 o posterior, Intel o Apple Silicon (el mismo archivo sirve
+para los dos).
+
+1. Abrí `ldt-ui_<versión>_universal.dmg` y arrastrá **ldt-ui** a Aplicaciones.
+2. La primera vez macOS la bloquea ("no se puede abrir porque Apple no puede comprobar…").
+   Andá a **Configuración del Sistema → Privacidad y seguridad** y, abajo de todo, tocá
+   **Abrir igualmente**. O, desde la terminal:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/ldt-ui.app
+   ```
+
+Para el botón de VS Code no hace falta el comando `code`: si no está, se abre la app.
+
+### Linux
+
+**Requisitos:** x86_64 con glibc 2.35 o posterior (Ubuntu 22.04+, Debian 12+, Fedora
+36+ y derivadas) y un escritorio gráfico.
+
+- **Debian, Ubuntu, Mint, Pop!_OS:** el `.deb`. `apt` instala también WebKitGTK.
+
+  ```sh
+  sudo apt install ./ldt-ui_<versión>_amd64.deb
+  ```
+
+- **Fedora, RHEL, openSUSE:** el `.rpm`.
+
+  ```sh
+  sudo dnf install ./ldt-ui-<versión>-1.x86_64.rpm
+  ```
+
+- **Cualquier otra:** el `.AppImage`, que trae sus propias librerías y no se instala.
+
+  ```sh
+  chmod +x ldt-ui_<versión>_amd64.AppImage
+  ./ldt-ui_<versión>_amd64.AppImage
+  ```
+
+  Necesita FUSE 2 (`libfuse2` en Ubuntu/Debian, `fuse-libs` en Fedora). Sin FUSE se
+  puede correr con `--appimage-extract-and-run`.
+
+El botón de terminal usa `$TERMINAL` si está definida; si no, busca la del escritorio
+(GNOME Terminal, Konsole, Xfce, kitty, Alacritty, WezTerm, foot o xterm).
+
+La app toma el PATH de tu shell de login al abrir, así que encuentra `ldt` y tus
+herramientas aunque la abras desde el menú del escritorio o el Dock.
 
 ## Uso
 
@@ -43,14 +99,24 @@ Sólo si querés modificar la app o generar tus propios instaladores. Además de
 falta:
 
 - Node 20+ y pnpm.
-- Rust y, en Windows, las MSVC Build Tools con "Desarrollo para el escritorio con C++".
+- Rust ([rustup](https://rustup.rs)).
+- Lo de cada sistema:
+  - **Windows:** las MSVC Build Tools con "Desarrollo para el escritorio con C++".
+  - **macOS:** las Command Line Tools de Xcode (`xcode-select --install`).
+  - **Linux (Debian/Ubuntu):**
+    `sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf build-essential`.
+    En otras distros, los mismos paquetes con su nombre; la
+    [guía de Tauri](https://v2.tauri.app/start/prerequisites/) los lista.
 
 ```bash
 pnpm install
 pnpm dev            # sólo la UI, en el navegador (http://localhost:5173)
 pnpm tauri dev      # la app de escritorio, con recarga en caliente
-pnpm tauri build    # instaladores (.msi / .exe) en src-tauri/target/release/bundle
+pnpm tauri build    # los instaladores del sistema en que corre, en src-tauri/target/release/bundle
 ```
+
+Cada sistema compila sólo sus propios instaladores. Los de la release los arma GitHub
+Actions (`.github/workflows/release.yml`) con un tag `v<versión>`.
 
 Detalles de diseño y reglas para trabajar sobre el repo: [AGENTS.md](AGENTS.md).
 
