@@ -71,7 +71,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bundles-${{ matrix.os }}
+          # Solo los instaladores: `bundle/appimage/` tambien tiene el AppDir entero.
           path: |
-            src-tauri/target/release/bundle/*/*.*
-            src-tauri/target/*/release/bundle/*/*.*
+            src-tauri/target/**/release/bundle/*/*.AppImage
+            src-tauri/target/**/release/bundle/*/*.deb
+            src-tauri/target/**/release/bundle/*/*.rpm
+            src-tauri/target/**/release/bundle/*/*.dmg
+            src-tauri/target/**/release/bundle/*/*.msi
+            src-tauri/target/**/release/bundle/*/*-setup.exe
           retention-days: 7

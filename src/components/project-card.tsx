@@ -11,12 +11,18 @@ import {
   TerminalIcon,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { ProjectView, Status } from '@/hooks/use-workspace'
-import { ldt, type DevProc } from '@/lib/ldt'
+import { ldt, type DevProc, type OpenKind } from '@/lib/ldt'
 import { cn } from '@/lib/utils'
+
+// Si falla (no hay terminal, no está VS Code) que se vea: sin esto el error se perdía.
+function openWith(kind: OpenKind, target: string) {
+  ldt.open(kind, target).catch((err: Error) => toast.error(err.message))
+}
 
 interface Props {
   project: ProjectView
@@ -155,7 +161,7 @@ export function ProjectCard({ project, onStart, onStop, onLogs, onFavorite }: Pr
           </Button>
         )}
         {status.kind === 'running' && status.proc.url && (
-          <Button size="sm" variant="ghost" onClick={() => ldt.open('url', status.proc.url!)}>
+          <Button size="sm" variant="ghost" onClick={() => openWith('url', status.proc.url!)}>
             <ExternalLinkIcon /> Abrir
           </Button>
         )}
@@ -165,13 +171,13 @@ export function ProjectCard({ project, onStart, onStop, onLogs, onFavorite }: Pr
               <ScrollTextIcon />
             </IconAction>
           )}
-          <IconAction label="Abrir en VS Code" onClick={() => ldt.open('editor', project.root)}>
+          <IconAction label="Abrir en VS Code" onClick={() => openWith('editor', project.root)}>
             <CodeXmlIcon />
           </IconAction>
-          <IconAction label="Abrir carpeta" onClick={() => ldt.open('folder', project.root)}>
+          <IconAction label="Abrir carpeta" onClick={() => openWith('folder', project.root)}>
             <FolderOpenIcon />
           </IconAction>
-          <IconAction label="Abrir terminal" onClick={() => ldt.open('terminal', project.root)}>
+          <IconAction label="Abrir terminal" onClick={() => openWith('terminal', project.root)}>
             <TerminalIcon />
           </IconAction>
         </div>
