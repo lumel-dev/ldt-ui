@@ -21,19 +21,15 @@ jobs:
   release:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    outputs:
-      id: ${{ steps.draft.outputs.id }}
     steps:
-      - id: draft
-        env:
+      - env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
           if [ -z "$id" ]; then
-            id=$(gh api "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=true --jq .id)
+            gh api "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -f name="$TAG" -F draft=true --jq .id
           fi
-          echo "id=$id" >> "$GITHUB_OUTPUT"
 
   build:
     needs: release
@@ -54,7 +50,7 @@ jobs:
             args: --target universal-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Dependencias de sistema (Linux)
         if: runner.os == 'Linux'
@@ -62,10 +58,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -79,25 +75,34 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          releaseId: ${{ needs.release.outputs.id }}
-          args: ${{ matrix.args }}
+      # Directo y no con tauri-action: esa accion ademas comprime el .app de macOS y lo sube
+      # como `.app.tar.gz` (el paquete del auto-actualizador, que la app no usa).
+      - run: pnpm tauri build ${{ matrix.args }}
 
-      # Sin tag (a mano, sobre una rama) no hay release: los instaladores quedan como
-      # artifacts del run, para probarlos antes de publicar.
+      # Solo los instaladores: `bundle/` tambien tiene el AppDir del AppImage y el .app suelto.
+      - name: Juntar instaladores
+        shell: bash
+        run: |
+          shopt -s nullglob globstar
+          mkdir -p installers
+          for f in src-tauri/target/**/release/bundle/*/{*.AppImage,*.deb,*.rpm,*.dmg,*.msi,*-setup.exe}; do
+            cp "$f" installers/
+          done
+          ls -la installers
+          [ -n "$(ls installers)" ]
+
+      - name: Subir a la release
+        if: github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" installers/* --clobber -R "$GITHUB_REPOSITORY"
+
+      # Sin tag no hay release: los instaladores quedan como artifacts del run, para
+      # probarlos antes de publicar.
       - if: github.ref_type != 'tag'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: bundles-${{ matrix.os }}
-          # Solo los instaladores: `bundle/appimage/` tambien tiene el AppDir entero.
-          path: |
-            src-tauri/target/**/release/bundle/*/*.AppImage
-            src-tauri/target/**/release/bundle/*/*.deb
-            src-tauri/target/**/release/bundle/*/*.rpm
-            src-tauri/target/**/release/bundle/*/*.dmg
-            src-tauri/target/**/release/bundle/*/*.msi
-            src-tauri/target/**/release/bundle/*/*-setup.exe
+          name: installers-${{ matrix.os }}
+          path: installers/
           retention-days: 7
