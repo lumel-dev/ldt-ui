@@ -11,7 +11,7 @@
  * - `readLog` solo lee archivos `.log` dentro de un directorio `logs/` de ldt.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, realpathSync, statSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'node:path'
@@ -20,16 +20,40 @@ import type { Plugin } from 'vite'
 const IS_WIN = process.platform === 'win32'
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
-/** `ldt.py` a partir del shim que esta en el PATH (`<repo>/bin/ldt`), o de LDT_PY. */
+/**
+ * `ldt.py` a partir del shim que esta en el PATH (`<repo>/bin/ldt`), o de LDT_PY. En Linux
+ * y macOS el shim es un symlink (`~/.local/bin/ldt`): se resuelve, porque `ldt.py` esta al
+ * lado del archivo real y no del link.
+ */
 function findLdt(): string {
   if (process.env.LDT_PY) return process.env.LDT_PY
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     if (!dir) continue
-    const script = path.resolve(dir, '..', 'ldt.py')
-    if (existsSync(path.join(dir, 'ldt')) && existsSync(script)) return script
+    const shim = path.join(dir, 'ldt')
+    if (!existsSync(shim)) continue
+    const script = path.resolve(path.dirname(realpathSync(shim)), '..', 'ldt.py')
+    if (existsSync(script)) return script
   }
   throw new Error('no encontre ldt: ponelo en el PATH o defini LDT_PY=/ruta/a/ldt.py')
 }
+
+/** Si `cmd` esta en el PATH. Sirve para elegir antes de lanzar: `spawn` avisa tarde. */
+function onPath(cmd: string): boolean {
+  return (process.env.PATH ?? '').split(path.delimiter).some((dir) => dir && existsSync(path.join(dir, cmd)))
+}
+
+/** Linux no tiene una terminal por defecto: `x-terminal-emulator` es de Debian/Ubuntu. */
+const LINUX_TERMINALS = [
+  'x-terminal-emulator',
+  'gnome-terminal',
+  'konsole',
+  'xfce4-terminal',
+  'kitty',
+  'alacritty',
+  'wezterm',
+  'foot',
+  'xterm',
+]
 
 const PYTHON = process.env.LDT_PYTHON ?? (IS_WIN ? 'python' : 'python3')
 
@@ -118,11 +142,17 @@ function openTarget(kind: string, target: string) {
     // La carpeta va como cwd, no como argumento: asi no hay que citarla para cmd.
     if (IS_WIN) launch('cmd.exe', ['/c', 'start', 'cmd.exe'], target)
     else if (process.platform === 'darwin') launch('open', ['-a', 'Terminal', target])
-    else launch('x-terminal-emulator', [], target)
+    else {
+      const term = [process.env.TERMINAL, ...LINUX_TERMINALS].find((t) => t && onPath(t))
+      if (!term) throw new Error('no encontre una terminal: defini TERMINAL con la que uses')
+      launch(term, [], target)
+    }
   } else if (kind === 'editor') {
     // `code` en Windows es un .cmd y tiene que pasar por cmd: por eso `code .` con la
     // carpeta como cwd, igual que la terminal, y no la ruta como argumento.
     if (IS_WIN) spawn('cmd.exe', ['/c', 'code', '.'], { cwd: target, detached: true, stdio: 'ignore', windowsHide: true }).unref()
+    // En macOS `code` solo existe si se lo instalo desde VS Code; si no, se abre la app.
+    else if (process.platform === 'darwin' && !onPath('code')) launch('open', ['-a', 'Visual Studio Code', target])
     else launch('code', ['.'], target)
   } else {
     throw new Error(`no se abrir "${kind}"`)

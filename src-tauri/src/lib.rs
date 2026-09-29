@@ -48,15 +48,76 @@ fn hidden(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// En macOS una app abierta desde el Finder o el Dock hereda el PATH de launchd
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`), no el de la shell, y en Linux muchos lanzadores
+/// tampoco leen el `.bashrc` / `.zshrc`. Sin el PATH de la persona no aparecen ni `ldt`
+/// (que `install.sh` deja en `~/.local/bin`) ni el `node` / `pnpm` con que `ldt` levanta
+/// los proyectos. Se le pide una vez a su shell de login, al arrancar.
+#[cfg(not(windows))]
+fn adopt_login_path() {
+    use std::time::{Duration, Instant};
+
+    const MARK: &str = "__LDT_UI_PATH__";
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+    let child = Command::new(&shell)
+        .args(["-ilc", &format!("printf '{MARK}%s{MARK}' \"$PATH\"")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let mut from_shell = None;
+    if let Ok(mut child) = child {
+        // Un rc que se cuelga (espera input, pega a la red) no puede dejar la app sin abrir.
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if let Ok(Some(_)) = child.try_wait() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let _ = child.kill();
+        if let Ok(out) = child.wait_with_output() {
+            // Entre marcas: un rc puede imprimir su propio cartel antes.
+            let text = String::from_utf8_lossy(&out.stdout);
+            from_shell = text.split(MARK).nth(1).filter(|p| !p.is_empty()).map(str::to_owned);
+        }
+    }
+
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs: Vec<PathBuf> = from_shell.map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    // Lo que ya tenia el proceso va despues, y `~/.local/bin` siempre: es donde queda `ldt`.
+    dirs.extend(std::env::split_paths(&current));
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(Path::new(&home).join(".local/bin"));
+    }
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| seen.insert(d.clone()));
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        // SAFETY: corre al principio de `run`, antes de que Tauri levante un solo thread.
+        unsafe { std::env::set_var("PATH", joined) };
+    }
+}
+
 /// `ldt.py` a partir del shim que esta en el PATH (`<repo>/bin/ldt`), o de `LDT_PY`.
+///
+/// En Linux y macOS el shim del PATH es un symlink (`~/.local/bin/ldt` -> `<repo>/bin/ldt`):
+/// hay que resolverlo, porque `ldt.py` esta al lado del archivo real y no del link.
 fn find_ldt() -> Result<PathBuf, String> {
     if let Some(script) = std::env::var_os("LDT_PY") {
         return Ok(script.into());
     }
     let path = std::env::var_os("PATH").unwrap_or_default();
     for dir in std::env::split_paths(&path) {
-        let script = dir.join("..").join("ldt.py");
-        if dir.join("ldt").exists() && script.exists() {
+        let shim = dir.join("ldt");
+        if !shim.exists() {
+            continue;
+        }
+        // En Windows no hace falta, y canonicalize devolveria una ruta `\\?\D:\...`.
+        #[cfg(not(windows))]
+        let shim = std::fs::canonicalize(&shim).unwrap_or(shim);
+        if let Some(script) = shim.parent().and_then(Path::parent).map(|repo| repo.join("ldt.py"))
+            && script.exists()
+        {
             return Ok(script);
         }
     }
@@ -182,8 +243,38 @@ async fn read_log(path: String, offset: i64) -> Envelope {
 }
 
 fn spawn(cmd: &mut Command) -> Result<(), String> {
+    try_spawn(cmd).map_err(|e| e.to_string())
+}
+
+fn try_spawn(cmd: &mut Command) -> std::io::Result<()> {
     cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
-    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+    cmd.spawn().map(|_| ())
+}
+
+/// Linux no tiene una terminal por defecto: `x-terminal-emulator` es de Debian/Ubuntu. Se
+/// prueba `$TERMINAL`, esa, y las de los escritorios mas comunes, todas con la carpeta como
+/// cwd, hasta que una exista.
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn spawn_linux_terminal(dir: &str) -> Result<(), String> {
+    const KNOWN: [&str; 9] = [
+        "x-terminal-emulator",
+        "gnome-terminal",
+        "konsole",
+        "xfce4-terminal",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "foot",
+        "xterm",
+    ];
+    let custom = std::env::var("TERMINAL").ok().filter(|t| !t.trim().is_empty());
+    for term in custom.iter().map(String::as_str).chain(KNOWN) {
+        match try_spawn(Command::new(term).current_dir(dir)) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            other => return other.map_err(|e| e.to_string()),
+        }
+    }
+    Err("no encontre una terminal: defini TERMINAL con la que uses".into())
 }
 
 fn open_impl(kind: &str, target: &str) -> Result<Value, String> {
@@ -217,21 +308,27 @@ fn open_impl(kind: &str, target: &str) -> Result<Value, String> {
         "terminal" => {
             // La carpeta va como cwd, no como argumento: asi no hay que citarla para cmd.
             // El cmd de afuera va oculto; `start` le abre su propia consola al de adentro.
-            if cfg!(windows) {
-                spawn(hidden(Command::new("cmd.exe").args(["/c", "start", "cmd.exe"]).current_dir(target)))?
-            } else if cfg!(target_os = "macos") {
-                spawn(Command::new("open").args(["-a", "Terminal", target]))?
-            } else {
-                spawn(Command::new("x-terminal-emulator").current_dir(target))?
-            }
+            #[cfg(windows)]
+            spawn(hidden(Command::new("cmd.exe").args(["/c", "start", "cmd.exe"]).current_dir(target)))?;
+            #[cfg(target_os = "macos")]
+            spawn(Command::new("open").args(["-a", "Terminal", target]))?;
+            #[cfg(all(not(windows), not(target_os = "macos")))]
+            spawn_linux_terminal(target)?;
         }
         "editor" => {
             // `code` en Windows es un .cmd y tiene que pasar por cmd: por eso `code .` con la
             // carpeta como cwd, igual que la terminal, y no la ruta como argumento.
+            // En macOS `code` solo existe si se lo instalo desde VS Code ("Shell Command:
+            // Install 'code' command in PATH"); si no esta, se abre la app por su nombre.
             if cfg!(windows) {
                 spawn(hidden(Command::new("cmd.exe").args(["/c", "code", "."]).current_dir(target)))?
             } else {
-                spawn(Command::new("code").arg(".").current_dir(target))?
+                match try_spawn(Command::new("code").arg(".").current_dir(target)) {
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound && cfg!(target_os = "macos") => {
+                        spawn(Command::new("open").args(["-a", "Visual Studio Code", target]))?
+                    }
+                    other => other.map_err(|e| e.to_string())?,
+                }
             }
         }
         other => return Err(format!("no se abrir \"{other}\"")),
@@ -246,6 +343,9 @@ async fn open(kind: String, target: String) -> Envelope {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(not(windows))]
+    adopt_login_path();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![scan, list, start, stop, read_log, open])
         .run(tauri::generate_context!())
