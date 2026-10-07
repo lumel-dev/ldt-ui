@@ -1,0 +1,5 @@
+# Vulnerabilidades en dependencias transitivas que el padre todavía no sube: forzamos
+# la versión parcheada. Sacar la línea cuando el padre ya traiga una igual o mayor.
+overrides:
+  # GHSA-68fv-2mgg-jv7q: @tailwindcss/vite > @tailwindcss/node pide source-map-js ^1.2.1.
+  source-map-js: ^1.2.2
