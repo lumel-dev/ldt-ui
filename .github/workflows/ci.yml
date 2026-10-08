@@ -1,0 +1,37 @@
+name: CI
+
+# Solo en PRs (incluidos los de Dependabot): el push a main ya dispara el deploy y la
+# org esta en el plan Free de Actions, asi que no gastamos minutos dos veces.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verificar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cada paso corre solo si el repo tiene ese script: cuando se agregue `test`,
+      # entra a la CI sin tocar este archivo.
+      - run: pnpm run --if-present lint
+      - run: pnpm run --if-present typecheck
+      - run: pnpm run --if-present test
+      - run: pnpm run --if-present build
