@@ -3,3 +3,9 @@
 overrides:
   # GHSA-68fv-2mgg-jv7q: @tailwindcss/vite > @tailwindcss/node pide source-map-js ^1.2.1.
   source-map-js: ^1.2.2
+
+# pnpm 12 escribe un documento "env" (pnpm mismo) al principio del lockfile y el dependency
+# graph de GitHub sólo lee el primero: Dependabot y las alertas quedan ciegos. Esto lo
+# apaga, a cambio de que pnpm no cambie solo a la versión de `packageManager`
+# (Docker/corepack y la CI la leen igual). https://github.com/dependabot/dependabot-core/issues/15904
+pmOnFail: ignore
