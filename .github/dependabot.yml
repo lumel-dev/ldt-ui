@@ -1,0 +1,45 @@
+# Repo público: sin PRs de versión (open-pull-requests-limit: 0). El archivo existe
+# para que los security updates que activa la org lleguen asignados a jlumel y
+# aparezcan en el inbox de PRs.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 0
+    assignees:
+      - jlumel
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 0
+    assignees:
+      - jlumel
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      time: "06:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 0
+    assignees:
+      - jlumel
+    commit-message:
+      prefix: chore
+      include: scope
