@@ -98,7 +98,7 @@ reciente quedan en el `localStorage` de la app; nada sale de la máquina.
 Sólo si querés modificar la app o generar tus propios instaladores. Además de `ldt` hace
 falta:
 
-- Node 20+ y pnpm.
+- Node 26+ y pnpm.
 - Rust ([rustup](https://rustup.rs)).
 - Lo de cada sistema:
   - **Windows:** las MSVC Build Tools con "Desarrollo para el escritorio con C++".
